@@ -101,8 +101,28 @@ router.post('/', (req: Request<Record<string, unknown>, Record<string, unknown>,
       }
 
       if (req.body.layout) {
-        const filePath: string = path.resolve(req.body.layout).toLowerCase()
-        const isForbiddenFile: boolean = (filePath.includes('ftp') || filePath.includes('ctf.key') || filePath.includes('encryptionkeys'))
+        const viewsSetting = req.app && typeof req.app.get === 'function' ? req.app.get('views') : undefined
+        const viewsDirs: string[] = [
+          path.resolve(__dirname, '../views'),
+          ...(viewsSetting ? (Array.isArray(viewsSetting) ? viewsSetting : [viewsSetting]).map((d: string) => path.resolve(d)) : [])
+        ]
+        const isPathTraversal: boolean = typeof req.body.layout !== 'string' || req.body.layout.includes('\0')
+        const isWithinViews: boolean = !isPathTraversal && viewsDirs.some((dir: string) => {
+          const normalizedDir = dir.endsWith(path.sep) ? dir : dir + path.sep
+          const resolvedFromDir = path.resolve(dir, req.body.layout as string)
+          const resolvedFromCwd = path.resolve(req.body.layout as string)
+          return (
+            resolvedFromDir.toLowerCase().startsWith(normalizedDir.toLowerCase()) ||
+            resolvedFromCwd.toLowerCase().startsWith(normalizedDir.toLowerCase())
+          )
+        })
+        const filePath: string = typeof req.body.layout === 'string' ? path.resolve(req.body.layout).toLowerCase() : ''
+        const isForbiddenFile: boolean = !isWithinViews ||
+          filePath.includes('ftp') || filePath.includes('ctf.key') || filePath.includes('encryptionkeys') ||
+          viewsDirs.some((dir: string) => {
+            const resolved = path.resolve(dir, req.body.layout as string).toLowerCase()
+            return resolved.includes('ftp') || resolved.includes('ctf.key') || resolved.includes('encryptionkeys')
+          })
         if (!isForbiddenFile) {
           res.render('dataErasureResult', {
             ...req.body,
